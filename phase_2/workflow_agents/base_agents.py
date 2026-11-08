@@ -337,6 +337,7 @@ class RoutingAgent():
         # Initialize the agent with given attributes
         self.openai_api_key = openai_api_key
         self.agents = agents
+        self.last_agent_name = None
 
     def get_embedding(self, text):
         client = OpenAI(base_url="https://openai.vocareum.com/v1", api_key=self.openai_api_key)
@@ -373,8 +374,10 @@ class RoutingAgent():
                 best_agent = agent    
 
         if best_agent is None:
+            self.last_agent_name = None
             return "Sorry, no suitable agent could be selected."
 
+        self.last_agent_name = best_agent["name"]
         print(f"[Router] Best agent: {best_agent['name']} (score={best_score:.3f})")
         return best_agent["func"](user_prompt)
 

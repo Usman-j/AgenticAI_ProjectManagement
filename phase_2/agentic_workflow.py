@@ -1,4 +1,6 @@
 import os
+import sys
+from io import StringIO
 from pathlib import Path
 from dotenv import load_dotenv
 from workflow_agents.base_agents import ActionPlanningAgent, KnowledgeAugmentedPromptAgent, EvaluationAgent, RoutingAgent   
@@ -146,6 +148,26 @@ def development_engineer_support_function(query):
 
 # Run the workflow
 
+class Tee:
+    """Write workflow output to both the console and a text file."""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, text):
+        for stream in self.streams:
+            stream.write(text)
+            stream.flush()
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
+
+
+original_stdout = sys.stdout
+loop_output_file = Path(__file__).with_name("workflow_loop_output.txt").open("w", encoding="utf-8")
+sys.stdout = Tee(original_stdout, loop_output_file)
+
 print("\n*** Workflow execution started ***\n")
 # Workflow Prompt
 # ****
@@ -154,24 +176,39 @@ workflow_prompt = "Produce a complete project plan for the Email Router product,
 print(f"Task to complete in this workflow, workflow prompt = {workflow_prompt}")
 
 print("\nDefining workflow steps from the workflow prompt")
-# TODO: 12 - Implement the workflow.
-#   1. Use the 'action_planning_agent' to extract steps from the 'workflow_prompt'.
-#   2. Initialize an empty list to store 'completed_steps'.
-#   3. Loop through the extracted workflow steps:
-#      a. For each step, use the 'routing_agent' to route the step to the appropriate support function.
-#      b. Append the result to 'completed_steps'.
-#      c. Print information about the step being executed and its result.
-#   4. After the loop, assemble the completed steps into a single consolidated project plan with
-#      clearly labelled sections for user stories, product features, and engineering tasks, and
-#      print that plan. Do not print only the last completed step.
-#
-# TODO: 13 - Implement the assembly step used by TODO 12 step 4.
-#   Group the entries in 'completed_steps' by the role that produced them and print one plan, e.g.:
-#
-#       print("\n*** Consolidated Project Plan ***\n")
-#       for section in ("User Stories", "Product Features", "Engineering Tasks"):
-#           print(f"--- {section} ---")
-#           # print the completed_steps belonging to this section
-#
-#   Keep the routing input separate from this assembly: route on the short step text only, and do
-#   not feed accumulated context back into 'routing_agent.route()'.
+
+extracted_steps = action_planning_agent.extract_steps_from_prompt(workflow_prompt)
+completed_steps = []
+completed_roles = []
+for i, step in enumerate(extracted_steps):
+    print(f"\nExecuting step {i}: {step}")
+    result = routing_agent.route_prompt(step)
+    completed_steps.append(result)
+    completed_roles.append(routing_agent.last_agent_name)
+    print(f"Result of step {i}: {result}")
+
+section_roles = {
+    "User Stories": "Product Manager",
+    "Product Features": "Program Manager",
+    "Engineering Tasks": "Development Engineer",
+}
+plan_output = StringIO()
+sys.stdout = plan_output
+print("\n*** Final Project Plan ***\n")
+for section, role in section_roles.items():
+    print(f"--- {section} ---")
+    section_results = [
+        result for result, producing_role in zip(completed_steps, completed_roles)
+        if producing_role == role
+    ]
+    if section_results:
+        for result in section_results:
+            print(result)
+    else:
+        print("No results were routed to this section.")
+
+sys.stdout = original_stdout
+final_plan = plan_output.getvalue()
+print(final_plan, end="")
+Path(__file__).with_name("final_project_plan.txt").write_text(final_plan, encoding="utf-8")
+loop_output_file.close()

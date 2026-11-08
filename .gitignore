@@ -1,4 +1,4 @@
 .vscode
 .env
-/phase_1/test_artifacts/
-/phase_1/workflow_agents/__pycache__/
+/phase_*/test_artifacts/
+/phase_*/workflow_agents/__pycache__/
