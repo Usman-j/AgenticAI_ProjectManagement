@@ -46,4 +46,4 @@ prompts = [
 ]
 
 for prompt in prompts:
-    print(routing_agent.route_prompt(prompt))
+    print(routing_agent.route(prompt))

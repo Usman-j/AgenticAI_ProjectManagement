@@ -349,7 +349,7 @@ class RoutingAgent():
 
         return embedding 
 
-    def route_prompt(self, user_prompt):
+    def route(self, user_prompt):
         """
         Routes a user prompt to the most suitable agent based on embedding similarity.
         """

@@ -182,7 +182,7 @@ completed_steps = []
 completed_roles = []
 for i, step in enumerate(extracted_steps):
     print(f"\nExecuting step {i}: {step}")
-    result = routing_agent.route_prompt(step)
+    result = routing_agent.route(step)
     completed_steps.append(result)
     completed_roles.append(routing_agent.last_agent_name)
     print(f"Result of step {i}: {result}")
