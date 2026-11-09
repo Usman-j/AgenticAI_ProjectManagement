@@ -1,5 +1,7 @@
 import os
 import sys
+import logging
+from datetime import datetime
 from io import StringIO
 from pathlib import Path
 from dotenv import load_dotenv
@@ -165,50 +167,113 @@ class Tee:
 
 
 original_stdout = sys.stdout
-loop_output_file = Path(__file__).with_name("workflow_loop_output.txt").open("w", encoding="utf-8")
-sys.stdout = Tee(original_stdout, loop_output_file)
+run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+output_dir = Path(__file__).with_name("test_artifacts")
+loop_output_file = None
+log_handler = None
+logger = logging.getLogger("agentic_workflow")
+logger.setLevel(logging.INFO)
+# Send workflow logs to the console and timestamped log file; avoid root-logger duplicates.
+logger.propagate = False
 
-print("\n*** Workflow execution started ***\n")
-# Workflow Prompt
-# ****
-workflow_prompt = "Produce a complete project plan for the Email Router product, including user stories, product features, and engineering tasks."
-# ****
-print(f"Task to complete in this workflow, workflow prompt = {workflow_prompt}")
+try:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    loop_output_path = output_dir / f"workflow_loop_output_{run_timestamp}.txt"
+    loop_output_file = loop_output_path.open("w", encoding="utf-8")
+    workflow_stdout = Tee(original_stdout, loop_output_file)
+    sys.stdout = workflow_stdout
+    log_handler = logging.StreamHandler(workflow_stdout)
+    log_handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    logger.addHandler(log_handler)
 
-print("\nDefining workflow steps from the workflow prompt")
+    print("\n*** Workflow execution started ***\n")
+    workflow_prompt = (
+        "Produce a complete project plan for the Email Router product, including "
+        "user stories, product features, and engineering tasks."
+    )
+    print(f"Task to complete in this workflow, workflow prompt = {workflow_prompt}")
+    print("\nDefining workflow steps from the workflow prompt")
 
-extracted_steps = action_planning_agent.extract_steps_from_prompt(workflow_prompt)
-completed_steps = []
-completed_roles = []
-for i, step in enumerate(extracted_steps):
-    print(f"\nExecuting step {i}: {step}")
-    result = routing_agent.route(step)
-    completed_steps.append(result)
-    completed_roles.append(routing_agent.last_agent_name)
-    print(f"Result of step {i}: {result}")
+    completed_steps = []
+    completed_roles = []
+    workflow_errors = []
 
-section_roles = {
-    "User Stories": "Product Manager",
-    "Product Features": "Program Manager",
-    "Engineering Tasks": "Development Engineer",
-}
-plan_output = StringIO()
-sys.stdout = plan_output
-print("\n*** Final Project Plan ***\n")
-for section, role in section_roles.items():
-    print(f"--- {section} ---")
-    section_results = [
-        result for result, producing_role in zip(completed_steps, completed_roles)
-        if producing_role == role
-    ]
-    if section_results:
-        for result in section_results:
-            print(result)
-    else:
-        print("No results were routed to this section.")
+    try:
+        extracted_steps = action_planning_agent.extract_steps_from_prompt(workflow_prompt)
+    except Exception as exc:
+        logger.exception("Action Planning Agent failed to extract workflow steps.")
+        workflow_errors.append(
+            {
+                "step": "Workflow step extraction",
+                "role": "Action Planning Agent",
+                "error": f"{type(exc).__name__}: {exc}"[:300],
+            }
+        )
+        extracted_steps = []
 
-sys.stdout = original_stdout
-final_plan = plan_output.getvalue()
-print(final_plan, end="")
-Path(__file__).with_name("final_project_plan.txt").write_text(final_plan, encoding="utf-8")
-loop_output_file.close()
+    for i, step in enumerate(extracted_steps, start=1):
+        print(f"\nExecuting step {i}: {step}")
+        # Clear the previous role so a routing failure cannot be attributed to
+        # the role selected for the preceding step.
+        routing_agent.last_agent_name = None
+        try:
+            result = routing_agent.route(step)
+            if not isinstance(result, str) or not result.strip():
+                raise ValueError("The selected agent returned an empty response.")
+        except Exception as exc:
+            role = routing_agent.last_agent_name
+            logger.exception("Workflow step %d failed (role: %s).", i, role or "unknown")
+            workflow_errors.append(
+                {
+                    "step": step,
+                    "role": role or "unknown",
+                    "error": f"{type(exc).__name__}: {exc}"[:300],
+                }
+            )
+            continue
+
+        completed_steps.append(result)
+        completed_roles.append(routing_agent.last_agent_name)
+        print(f"Result of step {i}: {result}")
+
+    section_roles = {
+        "User Stories": "Product Manager",
+        "Product Features": "Program Manager",
+        "Engineering Tasks": "Development Engineer",
+    }
+    plan_output = StringIO()
+    print("\n*** Final Project Plan ***\n", file=plan_output)
+    for section, role in section_roles.items():
+        print(f"--- {section} ---", file=plan_output)
+        section_results = [
+            result
+            for result, producing_role in zip(completed_steps, completed_roles)
+            if producing_role == role
+        ]
+        if section_results:
+            for result in section_results:
+                print(result, file=plan_output)
+        else:
+            print("No results were routed to this section.", file=plan_output)
+
+    if workflow_errors:
+        print("--- Workflow Errors ---", file=plan_output)
+        for error in workflow_errors:
+            print(f"Step: {error['step']}", file=plan_output)
+            print(f"Role: {error['role']}", file=plan_output)
+            print(f"Error: {error['error']}", file=plan_output)
+
+    final_plan = plan_output.getvalue()
+    print(final_plan, end="")
+    final_plan_path = output_dir / f"final_project_plan_{run_timestamp}.txt"
+    final_plan_path.write_text(final_plan, encoding="utf-8")
+except Exception:
+    logger.exception("Workflow stopped because of an unexpected error.")
+finally:
+    if log_handler is not None:
+        log_handler.flush()
+        logger.removeHandler(log_handler)
+        log_handler.close()
+    sys.stdout = original_stdout
+    if loop_output_file is not None:
+        loop_output_file.close()
