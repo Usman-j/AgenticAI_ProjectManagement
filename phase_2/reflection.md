@@ -1,10 +1,13 @@
 ﻿# Workflow Reflection
 
 ## Strengths
-The workflow has a useful division of work: an action-planning agent turns the project request into steps, embedding-based routing selects among role-specific agents, and evaluator agents give workers a chance to revise outputs against explicit format criteria. The run also records step results and errors in timestamped artifacts, which makes the execution easier to inspect.
+
+The workflow divides planning across an action-planning agent, embedding-based role routing, and role-specific worker agents. Evaluator agents give workers an opportunity to revise their responses against explicit criteria. Timestamped execution artifacts preserve the step results and errors for review.
 
 ## Limitations
-A few design limits show up in the run. Steps 1 (identify personas) and 2 (define user stories) both route to the Product Manager, and the evaluator makes even the persona-identification response conform to the `As a ...` user-story format. That ensures consistency, but imposes a story format on a step that only asks for personas. The final “compile” step routes to the Development Engineer, whose response is engineering tasks rather than an integrated plan. Also, each worker receives only its current step: earlier results are not accumulated as context for later work. This can lead to repeated or disconnected content across sections.
+
+In the recorded run, both persona identification and user-story definition route to the Product Manager. The Product Manager evaluator requires the `As a ...` user-story structure even for persona identification, so the formatting criteria are broader than that step requires. The final compilation step routes to the Development Engineer, whose output is engineering tasks rather than a consolidated plan. Each worker also receives only its current step, without prior step results as context, which can leave later outputs disconnected from earlier ones.
 
 ## Suggested Improvement
-Maintain workflow state containing the completed outputs, and pass relevant accumulated state to the selected worker as execution context. Keep the router’s embedding input limited to the original short step text, then augment the selected worker’s prompt with prior outputs (for example, pass the user stories to feature planning and both stories and features to task planning). This gives workers the context needed to build on previous results without changing the routing text or its embedding behavior.
+
+A focused improvement is to maintain workflow state containing completed outputs and pass relevant prior results to the selected worker as execution context. The router can continue embedding only the original short step text; after it selects a role, the worker prompt can include the context needed for that step. For example, feature planning can receive the user stories, and task planning can receive both the stories and features. This gives later workers useful context while preserving the current routing input.
